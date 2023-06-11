@@ -167,12 +167,14 @@ def print_summary_one_dataset(data):
     #mean_value = data.mean().item()
     #print('Mean value: {:>8.2f}'.format(mean_value))
 
+
     # Find statistics about counts.
     total_count = data.sum().item() 
     n_providers = len(data['provider'])
     average_count_per_provider = total_count / n_providers
     # Get the sum of counts over all reporting periods.
     count_sum_over_year_month = data.sum('year_month')
+
     min_count_amongst_providers = count_sum_over_year_month.min().item()
     max_count_amongst_providers = count_sum_over_year_month.max().item()
     range_count_amongst_providers = max_count_amongst_providers - min_count_amongst_providers
@@ -186,7 +188,8 @@ def print_summary_one_dataset(data):
     print('Maximum count: {:,d}'.format(max_count_amongst_providers))
     print('Range in count: {:,d}'.format(range_count_amongst_providers))
     print('Standard deviation in count: {:,.1f}'.format(std_count_amongst_providers))
-    
+    print(40 * '-')
+
     # Find the number of zero values (checking equality is not recommended
     # for floating-point numbers but here we are working with integers).
     # Also find the total number of values in the dataset, and report the
@@ -196,6 +199,24 @@ def print_summary_one_dataset(data):
     frac = n_zeros / n_values
     print('Number of zero values: {:>6d} out of {:>6d} ({:>5.2f} %)'.format(
         n_zeros, n_values, 100.0 * frac))
+
+    count_sum_over_year_month_no_zeros = \
+        count_sum_over_year_month[count_sum_over_year_month > 0]
+    min_count_amongst_providers_no_zeros = \
+            count_sum_over_year_month_no_zeros.min().item()
+    max_count_amongst_providers_no_zeros = \
+            count_sum_over_year_month_no_zeros.max().item()
+    range_count_amongst_providers_no_zeros = \
+            max_count_amongst_providers_no_zeros - min_count_amongst_providers_no_zeros
+    std_count_amongst_providers_no_zeros = \
+            count_sum_over_year_month_no_zeros.std().item()
+    print(np.mean(count_sum_over_year_month_no_zeros))
+    
+    print('Average count (excluding zeros): {:,.1f}'.format(np.mean(count_sum_over_year_month_no_zeros).item()))
+    print('Minimum count (excluding zeros): {:,d}'.format(min_count_amongst_providers_no_zeros))
+    print('Maximum count (excluding zeros): {:,d}'.format(max_count_amongst_providers_no_zeros))
+    print('Range in count (excluding zeros): {:,d}'.format(range_count_amongst_providers_no_zeros))
+    print('Standard deviation in count (excluding zeros): {:,.1f}'.format(std_count_amongst_providers_no_zeros))
 
     return
 
@@ -287,6 +308,20 @@ def get_point_colours(bed_days_data):
             # Set the colour for all entries matching the provider, using
             # the XArray .loc[] syntax.
             colours.loc[{'provider' : provider}] = colour_dict[provider]
+
+    anonymiser_dict = {
+                    'RHA' : 'A',
+                    'RX4' : 'B',
+                    'RX3' : 'C',
+                    'RW1' : 'D',
+                    'other' : 'other'}
+
+    colour_dict_anonymised = dict()
+    for key, value in colour_dict.items():
+
+        colour_dict_anonymised[anonymiser_dict[key]] = value
+
+    colour_dict = colour_dict_anonymised
 
     return colours, colour_dict
 
@@ -411,7 +446,7 @@ def scatter_plot(x, y, axis_labels, axis_lims, pt_labels = None, sizes = None,
                 # Set the label for this point.
                 sel.annotation.set(text = pt_label)
 
-    return
+    return ax
 
 def make_label_list_common(array):
 
@@ -534,8 +569,22 @@ def scatter_plot_two_intervention_types(dir_plot, restraint_data, bed_days_data,
 
         x_var = x
         y_var = y
-        x_label = 'Number of interventions using oral chemical restraint'
-        y_label = 'Number of interventions using seclusion'
+        if axes_types[0] == 'log':
+
+            x_label = 'Number of interventions\nusing oral chemical restraint'
+
+        else:
+
+            x_label = 'Number of interventions using oral chemical restraint'
+
+        if axes_types[1] == 'log':
+
+            y_label = 'Number of interventions\nusing seclusion'
+
+        else:
+
+            y_label = 'Number of interventions using seclusion'
+
         fig_name = 'scatter_oral_chem_seclusion_count_{:}{:}.png'.format(*axes_types)
 
         # Here the axis limits are simply high enough to fit the largest values.
@@ -574,8 +623,23 @@ def scatter_plot_two_intervention_types(dir_plot, restraint_data, bed_days_data,
 
         x_var = 1000.0 * x_norm_bed_days
         y_var = 1000.0 * y_norm_bed_days
-        x_label = 'Number of interventions using oral chemical restraint per 1000 bed days'
-        y_label = 'Number of interventions using seclusion per 1000 bed days'
+        #if axes_types[0] == 'log':
+        if True:
+
+            x_label = 'Number of interventions using oral chemical restraint\nper 1000 bed days'
+
+        else:
+
+            x_label = 'Number of interventions using oral chemical restraint per 1000 bed days'
+
+        #if axes_types[1] == 'log':
+        if True:
+
+            y_label = 'Number of interventions using seclusion\nper 1000 bed days'
+
+        else:
+
+            y_label = 'Number of interventions using seclusion per 1000 bed days'
         fig_name = 'scatter_oral_chem_seclusion_norm_bed_days_{:}{:}.png'.format(*axes_types)
 
         x_lim_max = np.nanmax(x_var) * 1.1
@@ -659,7 +723,7 @@ def make_label_list_for_bed_day_versus_intervention_plot(bed_days_filtered, inte
 
     return pt_label_list
 
-def scatter_plot_bed_days_versus_intervention_type(dir_plot, bed_days_data, restraint_data, intervention, axes_types):
+def scatter_plot_bed_days_versus_intervention_type(dir_plot, bed_days_data, restraint_data, intervention, axes_types, analyse_residuals = False):
 
     # Get the data relating to the intervention type of interest (e.g. oral
     # chemical restraint).
@@ -698,12 +762,87 @@ def scatter_plot_bed_days_versus_intervention_type(dir_plot, bed_days_data, rest
     fig_path = os.path.join(dir_plot, fig_name)
 
     # Generate the scatter plot.
-    scatter_plot(x, y, axis_labels, axis_lims,
+    ax = scatter_plot(x, y, axis_labels, axis_lims,
             pt_labels = pt_labels,
             sizes = None,
             lines = None,
             fig_path = fig_path,
             axes_types = axes_types)
+
+    if analyse_residuals:
+        
+        fit_vars = []
+        for var, axes_type in zip([x, y], axes_types):
+
+            if axes_type == 'lin':
+
+                raise NotImplementedError
+
+            else:
+                fit_vars.append(np.log(var.flatten()))
+
+        # Remove invalid values.
+        #i_good = (~np.isnan(fit_vars[0]) & ~np.isnan(fit_vars[1]))
+        i_good = ((x.flatten() > 0.0) & (y.flatten() > 0.0))
+        fit_vars[0] = fit_vars[0][i_good]
+        fit_vars[1] = fit_vars[1][i_good]
+     
+        coeffs =  np.polyfit(*fit_vars, 1)
+
+        n_span = 100
+        x_span = np.geomspace(0.1, 100.0, num = n_span)
+        #log_x_span = np.log10(x_span)
+        log_x_span = np.log(x_span)
+
+        log_y_fitted_vals = np.polyval(coeffs, log_x_span)
+        #y_fitted_vals = 10.0 ** log_y_fitted_vals
+        y_fitted_vals = np.exp(log_y_fitted_vals)
+
+        ax.plot(x_span, y_fitted_vals)
+        ax.set_xlim([1.0, 85.0])
+        ax.set_ylim([2.0, 100.0])
+
+        print("Saving to {:}".format(fig_path))
+        plt.savefig(fig_path, dpi = 300)
+        
+    return
+
+# --- Bed-day histogram ----------
+def plot_bed_days_histogram(dir_plot, data):
+
+    counts = data.sum('year_month')
+
+    fig_size_inches = (8.0, 6.0)
+    fig = plt.figure(figsize = fig_size_inches, constrained_layout = True)
+
+    ax  = plt.gca()
+
+    #ax.hist(counts / 1000)
+
+    n_bins = 13
+    bins = np.linspace(0.0, 600.0, num = n_bins)
+    bin_vals, bin_edges = np.histogram(counts / 1000, bins = bins)
+
+    ax.bar(bin_edges[:-1], bin_vals, width=np.diff(bin_edges),
+            edgecolor = "grey",
+            align = "edge")
+
+    print(bin_edges)
+
+    # Label the axes.
+    font_size_label = 14
+    ax.set_xlabel('Number of bed days in reporting period (thousands)',
+            fontsize = font_size_label)
+    ax.set_ylabel('Number of providers', fontsize = font_size_label)
+
+    ax.set_xlim([0.0, 600.0])
+    
+    from matplotlib.ticker import MaxNLocator
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+    
+    fig_path = os.path.join(dir_plot, 'bed_days_histogram.png')
+    print("Saving to {:}".format(fig_path))
+    plt.savefig(fig_path, dpi = 300)
 
     return
 
@@ -950,11 +1089,13 @@ def main():
     print_bed_days_summaries(bed_days_data)
 
     # Set which types of plots you wish to generate..
-    plot_types = ['two_interventions', 'bed_days_vs_intervention', 'bed_days_grid']
+    #plot_types = ['two_interventions', 'bed_days_vs_intervention', 'bed_days_grid']
     #plot_types = ['two_interventions', 'bed_days_vs_intervention']
     #plot_types = ['bed_days_vs_intervention']
     #plot_types = ['two_interventions']
-    plot_types = ['bed_days_grid']
+    #plot_types = ['bed_days_grid']
+    plot_types = ['bed_days_histogram']
+    #plot_types = []
     for plot_type in plot_types:
 
         if plot_type == 'two_interventions':
@@ -969,6 +1110,7 @@ def main():
             intervention_1 = '14' # '14' is oral chemical intervention.
             intervention_2 = '05' # '05' is seclusion intervention.
             plot_var = 'norm_bed_days'
+            #plot_var = 'norm_tot_int'
             #axes_types = ['log', 'log'] # 'lin' (linear) or 'log' for x and y axes.
             axes_types = ['lin', 'lin'] # 'lin' (linear) or 'log' for x and y axes.
             scatter_plot_two_intervention_types(dir_plot, restraint_data, bed_days_data,
@@ -980,10 +1122,12 @@ def main():
             # Make a scatter plot of bed-days against number of interventions of
             # a specified type.
             intervention = '14' # '14' is oral chemical intervention.
-            #axes_types = ['log', 'log'] # 'lin' (linear) or 'log' for x and y axes.
-            axes_types = ['lin', 'lin'] # 'lin' (linear) or 'log' for x and y axes.
+            axes_types = ['log', 'log'] # 'lin' (linear) or 'log' for x and y axes.
+            #axes_types = ['lin', 'lin'] # 'lin' (linear) or 'log' for x and y axes.
+            analyse_residuals = True
             scatter_plot_bed_days_versus_intervention_type(dir_plot, bed_days_data,
-                    restraint_data, intervention, axes_types)
+                    restraint_data, intervention, axes_types,
+                    analyse_residuals = analyse_residuals)
 
         elif plot_type == 'bed_days_grid':
 
@@ -991,6 +1135,10 @@ def main():
             # across reporting period and provider.
             intervention = '14' # '14' is oral chemical intervention.
             grid_plot_bed_days(dir_plot, bed_days_data, restraint_data, intervention)
+
+        elif plot_type == 'bed_days_histogram':
+
+            plot_bed_days_histogram(dir_plot, bed_days_data)
 
         else:
 
