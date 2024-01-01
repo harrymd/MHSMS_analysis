@@ -36,6 +36,8 @@ import numpy as np
 from scipy.stats import spearmanr
 import xarray as xr
 
+intervention_name_dict = {'05': 'seclusion', '14' : 'oral chemical restraint'}
+
 # Import optional modules.
 # Third-party modules.
 # mplcursors    Provides convenient wrappers for interactive plot cursors.
@@ -210,7 +212,7 @@ def print_summary_one_dataset(data):
             max_count_amongst_providers_no_zeros - min_count_amongst_providers_no_zeros
     std_count_amongst_providers_no_zeros = \
             count_sum_over_year_month_no_zeros.std().item()
-    print(np.mean(count_sum_over_year_month_no_zeros))
+    #print(np.mean(count_sum_over_year_month_no_zeros))
     
     print('Average count (excluding zeros): {:,.1f}'.format(np.mean(count_sum_over_year_month_no_zeros).item()))
     print('Minimum count (excluding zeros): {:,d}'.format(min_count_amongst_providers_no_zeros))
@@ -421,6 +423,8 @@ def scatter_plot(x, y, axis_labels, axis_lims, pt_labels = None, sizes = None,
 
         ax.set_aspect(aspect)
 
+    #ax.set_xlim([2000.0, 5.0E4])
+
     # Save the figure (if a path is provided).
     if fig_path is not None:
 
@@ -445,6 +449,8 @@ def scatter_plot(x, y, axis_labels, axis_lims, pt_labels = None, sizes = None,
 
                 # Set the label for this point.
                 sel.annotation.set(text = pt_label)
+
+
 
     return ax
 
@@ -673,17 +679,20 @@ def scatter_plot_two_intervention_types(dir_plot, restraint_data, bed_days_data,
     print("Spearman's rank correlation coefficient and p-value:")
     print(spearman_res)
 
+    if colours is not None:
+        colours = colours.values.flatten()
+
     # Make the scatter plot.
     fig_path = os.path.join(dir_plot, fig_name)
     scatter_plot(x_var, y_var, axis_labels, axis_lims,
             pt_labels = pt_label_list, sizes = pt_sizes,
             lines = lines, fig_path = fig_path, axes_types = axes_types,
-            aspect = aspect, colours = colours.values.flatten(), colour_dict = colour_dict)
+            aspect = aspect, colours = colours, colour_dict = colour_dict)
 
     return
 
 # --- Bed-day versus intervenion scatter plots. -------------------------------
-def make_label_list_for_bed_day_versus_intervention_plot(bed_days_filtered, intervention_data, x, y):
+def make_label_list_for_bed_day_versus_intervention_plot(bed_days_filtered, intervention_data, x, y, intervention_name):
     '''
     We generate labels for each point and will make them appear when hovering
     over that point with the mouse, which can make it easier to inspect the
@@ -714,8 +723,8 @@ def make_label_list_for_bed_day_versus_intervention_plot(bed_days_filtered, inte
     # Define the format of the labels.
     fmt_str_for_pt_labels = 'Reporting period: {:}'\
                             '\nProvider: {:} ({:})'\
-                            '\nBed-day count: {:>3d}'\
-                            '\nOral chemical count: {:>3d}'
+                            '\nBed-day count: {:>6,d}'\
+                            '\n' + intervention_name + ' count: {:>3d}'
 
     # Generate the labels.
     pt_label_list = generate_point_labels(fmt_str_for_pt_labels,
@@ -725,12 +734,18 @@ def make_label_list_for_bed_day_versus_intervention_plot(bed_days_filtered, inte
 
 def scatter_plot_bed_days_versus_intervention_type(dir_plot, bed_days_data, restraint_data, intervention, axes_types, analyse_residuals = False):
 
+    intervention_name = intervention_name_dict[intervention]
+
     # Get the data relating to the intervention type of interest (e.g. oral
     # chemical restraint).
     intervention_data = restraint_data.sel(intervention = intervention).squeeze()
 
-    # Convert to 1000 bed days.
-    x = bed_days_data.values * 1.0E-3
+    scale_by_1000 = False
+    
+    x = bed_days_data.values * 1.0
+    ## Convert to 1000 bed days.
+    if scale_by_1000:
+        x = x * 1.0E-3
 
     # Filler values (negative) can be replaced with NaN.
     x[x < 0.0] = np.nan
@@ -740,7 +755,7 @@ def scatter_plot_bed_days_versus_intervention_type(dir_plot, bed_days_data, rest
 
     # Generate the labels for the points.
     pt_labels = make_label_list_for_bed_day_versus_intervention_plot(
-            bed_days_data, intervention_data, x, y)
+            bed_days_data, intervention_data, x, y, intervention_name)
 
     # Set the axes limits.
     x_lim_min = 0.0
@@ -750,15 +765,19 @@ def scatter_plot_bed_days_versus_intervention_type(dir_plot, bed_days_data, rest
     axis_lims = [[x_lim_min, x_lim_max], [y_lim_min, y_lim_max]]
 
     # Set the axes labels.
-    x_label = 'Bed days (thousands)'
-    y_label = 'Number of interventions using oral chemical restraint'
+    if scale_by_1000:
+        x_label = 'Bed days (thousands)'
+    else:
+        x_label = 'Bed days'
+    y_label = 'Number of interventions: {:}'.format(intervention_name)
     axis_labels = [x_label, y_label]
     
-    # Choose linear axes (not logarithmic).
-    axes_type = 'linear'
+    ## Choose linear axes (not logarithmic).
+    #axes_type = 'linear'
 
     # Define the name of the output file.
-    fig_name = 'scatter_bed_days_oral_chem_{:}{:}.png'.format(*axes_types)
+    fig_name = 'scatter_bed_days_{:}_{:}{:}.png'.format(
+                intervention_name.replace(' ', '_'), *axes_types)
     fig_path = os.path.join(dir_plot, fig_name)
 
     # Generate the scatter plot.
@@ -1070,16 +1089,39 @@ def main():
     # (Note: data from non-overlapping providers/months will be discarded.)
     bed_days_data, restraint_data = xr.align(bed_days_data, restraint_data)
 
+    restraint_data = restraint_data.astype(int)
+    bed_days_data = bed_days_data.astype(int)
+
+    #  --- Filter the providers.  --------------------------------------------
+    # "A provider is only excluded if they report no restraint of any type
+    # whatsoever in more than 2 months/24."
+
+    # For each month, find if restraint of any kind was reported.
+    null_reporting_by_month = (restraint_data == 0).all(dim = 'intervention')
+    number_of_null_months_by_provider = null_reporting_by_month.sum(dim = 'year_month')
+    provider_is_included_in_study = (number_of_null_months_by_provider < 3)
+    
+    included_providers = restraint_data.coords['provider'][provider_is_included_in_study]
+    excluded_providers = restraint_data.coords['provider'][~provider_is_included_in_study]
+
+    for provider_list, gerund in zip([included_providers, excluded_providers], ['included', 'excluded']):
+
+        print("\nProviders {:} in study ({:>3d} of {:>3d}):".format(gerund, len(provider_list), restraint_data.sizes['provider']))
+        for provider in provider_list:
+            key = str(provider.values)
+            description = restraint_data['provider'].attrs.get('description')[key]
+            print('{:>6} {:}'.format(key, description))
+
+    # Note: https://stackoverflow.com/a/39454954/19979370
+    bed_days_data = bed_days_data.where(provider_is_included_in_study, drop = True).astype(int)
+    restraint_data = restraint_data.where(provider_is_included_in_study, drop = True).astype(int)
+
     # Get colours of scatter points.
-    colours, colour_dict = get_point_colours(bed_days_data)
+    #colours, colour_dict = get_point_colours(bed_days_data)
+    colours = None
+    colour_dict = None
 
-    # Print some summaries of the data.
-    #print(restraint_data)
-    #for intervention in restraint_data.coords['intervention']:
-    #    
-    #    int_code = intervention.item()
-    #    print(int_code, restraint_data.coords['intervention'].attrs['description'][int_code])
-
+    # Print summaries.
     print(80 * '-')
     print('Summary of restraint data:')
     print_restraint_summaries(restraint_data, interventions = ['05', '14', '15', '16', '17'])
@@ -1087,14 +1129,20 @@ def main():
     print(80 * '-')
     print('\n\nSummary of bed-days data:')
     print_bed_days_summaries(bed_days_data)
+    
+    # "Laplace correction"
+    apply_laplace = True
+    if apply_laplace:
+
+        restraint_data = restraint_data + 1
 
     # Set which types of plots you wish to generate..
     #plot_types = ['two_interventions', 'bed_days_vs_intervention', 'bed_days_grid']
-    #plot_types = ['two_interventions', 'bed_days_vs_intervention']
+    plot_types = ['two_interventions', 'bed_days_vs_intervention']
     #plot_types = ['bed_days_vs_intervention']
     #plot_types = ['two_interventions']
     #plot_types = ['bed_days_grid']
-    plot_types = ['bed_days_histogram']
+    #plot_types = ['bed_days_histogram']
     #plot_types = []
     for plot_type in plot_types:
 
@@ -1109,10 +1157,11 @@ def main():
             # 'norm_bed_days'    Counts divided by number of bed days.
             intervention_1 = '14' # '14' is oral chemical intervention.
             intervention_2 = '05' # '05' is seclusion intervention.
-            plot_var = 'norm_bed_days'
+            plot_var = 'count'
+            #plot_var = 'norm_bed_days'
             #plot_var = 'norm_tot_int'
-            #axes_types = ['log', 'log'] # 'lin' (linear) or 'log' for x and y axes.
-            axes_types = ['lin', 'lin'] # 'lin' (linear) or 'log' for x and y axes.
+            axes_types = ['log', 'log'] # 'lin' (linear) or 'log' for x and y axes.
+            #axes_types = ['lin', 'lin'] # 'lin' (linear) or 'log' for x and y axes.
             scatter_plot_two_intervention_types(dir_plot, restraint_data, bed_days_data,
                     intervention_1, intervention_2, plot_var, axes_types, colours,
                     colour_dict)
@@ -1122,9 +1171,10 @@ def main():
             # Make a scatter plot of bed-days against number of interventions of
             # a specified type.
             intervention = '14' # '14' is oral chemical intervention.
+            #intervention = '05' # '05' is seclusion.
             axes_types = ['log', 'log'] # 'lin' (linear) or 'log' for x and y axes.
             #axes_types = ['lin', 'lin'] # 'lin' (linear) or 'log' for x and y axes.
-            analyse_residuals = True
+            analyse_residuals = False 
             scatter_plot_bed_days_versus_intervention_type(dir_plot, bed_days_data,
                     restraint_data, intervention, axes_types,
                     analyse_residuals = analyse_residuals)

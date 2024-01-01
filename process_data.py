@@ -184,6 +184,15 @@ def get_list_of_providers_and_interventions_from_restraint_csv(dir_data, year_mo
         df_input = load_csv_from_year_month(dir_data,
                                             file_name_format,
                                             *year_month_pairs[i, :])
+        
+        # At some point, the column labels were changed in the NHS MHS.
+        # Use this mapping to convert the old labels to new style.
+        col_rename_dict = { 'PRIMARY_LEVEL'                 : 'LEVEL_ONE',
+                            'PRIMARY_LEVEL_DESCRIPTION'     : 'LEVEL_ONE_DESCRIPTION',
+                            'SECONDARY_LEVEL'               : 'LEVEL_TWO',
+                            'SECONDARY_LEVEL_DESCRIPTION'   : 'LEVEL_TWO_DESCRIPTION',
+                            }
+        df_input = df_input.rename(columns = col_rename_dict)
 
         # Get a list of all providers mentioned in this file, and append to the
         # master list.
@@ -191,6 +200,7 @@ def get_list_of_providers_and_interventions_from_restraint_csv(dir_data, year_mo
         # be accessed as follows: dataframe.BREAKDOWN
         key = 'Provider'
         df_providers = df_input[df_input.BREAKDOWN == key]
+
         providers_list.extend(list(df_providers.LEVEL_ONE))
         providers_description_list.extend(list(df_providers.LEVEL_ONE_DESCRIPTION))
 
@@ -198,6 +208,7 @@ def get_list_of_providers_and_interventions_from_restraint_csv(dir_data, year_mo
         # append to the master list.
         key = 'Provider; Restrictive Intervention Type'
         df_intervention = df_input[df_input.BREAKDOWN == key]
+
         interventions_list.extend(list(df_intervention.LEVEL_TWO))
         interventions_description_list.extend(list(df_intervention.LEVEL_TWO_DESCRIPTION))
 
@@ -292,6 +303,17 @@ def parse_one_restraint_csv_file(dir_data, file_name_format, year, month, restra
     # Pandas data frame.
     df_input = load_csv_from_year_month(dir_data, file_name_format, year, month)
 
+    # At some point, the column labels were changed in the NHS MHS.
+    # Use this mapping to convert the old labels to new style.
+    col_rename_dict = { 'PRIMARY_LEVEL'                 : 'LEVEL_ONE',
+                        'PRIMARY_LEVEL_DESCRIPTION'     : 'LEVEL_ONE_DESCRIPTION',
+                        'SECONDARY_LEVEL'               : 'LEVEL_TWO',
+                        'SECONDARY_LEVEL_DESCRIPTION'   : 'LEVEL_TWO_DESCRIPTION',
+                        'MEASURE_ID'                    : 'METRIC',
+                        'MEASURE_VALUE'                 : 'METRIC_VALUE',
+                        }
+    df_input = df_input.rename(columns = col_rename_dict)
+
     # Get the year-month index.
     year_month_str = year_month_fmt.format(year, month)
 
@@ -299,6 +321,12 @@ def parse_one_restraint_csv_file(dir_data, file_name_format, year, month, restra
     # provider.
     key = 'Provider; Restrictive Intervention Type'
     df_RI = df_input[df_input.BREAKDOWN == key]
+
+    if len(df_RI) == 0:
+
+        key = 'Provider; Restrictive intervention type'
+        df_RI = df_input[df_input.BREAKDOWN == key]
+
 
     # Filter again by the metric that we are interested in, in this case
     # metric MHS76 'Number of people subject to restrictive intervention'.
@@ -345,9 +373,10 @@ def parse_restraint_csv_files(dir_input, dir_output):
     # Specify directory name, the expect format of the CSV file names, and
     # the breakpoints in the CSV file names where the year and month can
     # be found.
-    dir_data = os.path.join(dir_input,
-                        'Restraint Data Oct 2021 to September 2022_tidied')
-    file_name_format = 'MHSDS Data_Rstr_{:}Prf_{:d}_final.csv'
+    dir_data = os.path.join(dir_input, 'restraint')
+                        #'Restraint Data Oct 2021 to September 2022_tidied')
+    #file_name_format = 'MHSDS Data_Rstr_{:}Prf_{:d}_final.csv'
+    file_name_format = 'MHSDS Data_Rstr_{:}Prf_{:d}.csv'
     file_str_break_points = [16, 23]
     print('\nParsing CSV files in restraint folder: {:}'.format(dir_data))
 
@@ -490,9 +519,10 @@ def parse_main_database_csv_files(dir_input, dir_output):
     # Specify directory name, the expect format of the CSV file names, and
     # the breakpoints in the CSV file names where the year and month can
     # be found.
-    dir_data = os.path.join(dir_input,
-                        'Main database Oct 2021 to September 2022_tidied')
-    file_name_format = 'MHSDS Data_{:}Prf_{:d}_final.csv'
+    dir_data = os.path.join(dir_input, 'main_database') 
+    #                    'Main database Oct 2021 to September 2022_tidied')
+    #file_name_format = 'MHSDS Data_{:}Prf_{:d}_final.csv'
+    file_name_format = 'MHSDS Data_{:}Prf_{:d}.csv'
     file_str_break_points = [11, 18]
     print('\nParsing CSV files in main database folder: {:}'.format(dir_data))
 
@@ -593,7 +623,7 @@ def main():
     #
     # Define path (relative to this file) to the directory where the input
     # files are stored. '../' means go down one directory level.
-    dir_input = '../'
+    dir_input = '../new_data'
     dir_output = 'output'
     assert os.path.isdir(dir_output), 'The output directory ({:}) does not '\
             'exist. Please create it.'.format(dir_output)
