@@ -4,6 +4,8 @@ The MHSMS (Mental Health Services Monthly Statistics) are reported as spreadshee
 
 ## Installation
 
+Requires the Python packages `matplotlib`, `numpy`, `pandas`, and `xarray`, and optionally `scipy` (for statistics) and `mplcursors` (for interactive plot labels). These packages can be installed using a package manager such as Anaconda.
+
 ## Usage
 
 There are two main scripts, which should be called from the command line:
